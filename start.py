@@ -324,15 +324,14 @@ def install_portainer():
         print_title("Erişim: http://sunucu-ip:9000")
     else:
         print_title("Portainer kurulumunda hata")
-
 def install_netdata():
     print_title("Netdata kontrolü")
     
     netdata_check = run("which netdata", show_output=False)
     if netdata_check.returncode == 0:
         print_title("Netdata zaten kurulu - güncelleme kontrolü")
-        # Netdata güncelleme komutu düzeltildi
-        run("netdata-updater.sh -f", show_output=True)
+        # Netdata güncelleme komutu
+        run("netdata-updater.sh -f || true", show_output=True)
         print_title("Netdata güncellemesi tamamlandı")
         return
     
@@ -341,20 +340,29 @@ def install_netdata():
     # Netdata için gerekli paketler
     run("apt install -y curl git", show_output=True)
     
-    # Netdata kurulum scripti - syntax hatası düzeltildi
-    run("curl -Ss https://my-netdata.io/kickstart.sh > /tmp/netdata-install.sh", show_output=True)
-    run("chmod +x /tmp/netdata-install.sh", show_output=True)
-    run("bash /tmp/netdata-install.sh --non-interactive", show_output=True)
+    # Netdata kurulum scripti - resmi dokümantasyondaki güncel yöntem
+    run("curl -Ss 'https://raw.githubusercontent.com/netdata/netdata/master/packaging/installer/install-required-packages.sh' --output /tmp/install-required-packages.sh && bash /tmp/install-required-packages.sh -i netdata", show_output=True)
+    
+    # Alternatif kurulum yöntemi
+    run("wget -O /tmp/netdata-kickstart.sh https://my-netdata.io/kickstart.sh && sh /tmp/netdata-kickstart.sh --no-update --stable-channel", show_output=True)
     
     # Temizlik
-    run("rm -f /tmp/netdata-install.sh", show_output=False)
+    run("rm -f /tmp/install-required-packages.sh /tmp/netdata-kickstart.sh", show_output=False)
     
     if check_service("netdata"):
         run("ufw allow 19999/tcp", show_output=True)
         print_title("Netdata kuruldu: http://sunucu-ip:19999")
     else:
-        print_title("Netdata kurulumunda hata")
-
+        print_title("Netdata kurulumunda hata, alternatif yöntem deneniyor")
+        # Son çare olarak paket deposundan kurmayı dene
+        run("apt install -y netdata", show_output=True)
+        
+        if check_service("netdata"):
+            run("ufw allow 19999/tcp", show_output=True)
+            print_title("Netdata paket deposundan kuruldu: http://sunucu-ip:19999")
+        else:
+            print_title("Netdata kurulumu tamamen başarısız")
+            
 def boot_analysis():
     print_title("Boot süresi analizi")
     run("systemd-analyze", show_output=True)
@@ -534,4 +542,5 @@ def main():
         print("İşlemler tamamlandı. Sunucu yeniden başlatılmadı.")
 
 if __name__ == "__main__":
+
     main()
