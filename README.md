@@ -28,16 +28,16 @@ Root erişimi
 🛠️ Kurulum
 Betiği indirin:
 
-bash
 wget https://raw.githubusercontent.com/blackcode06/ubuntu/refs/heads/main/start.py
+
 Çalıştırma izni verin:
 
-bash
 chmod +x start.py
+
 Betiği çalıştırın:
 
-bash
 sudo python3 start.py
+
 
 📝 Kullanım
 Betik çalıştırıldığında interaktif bir menü sunar:
