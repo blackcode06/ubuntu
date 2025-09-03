@@ -16,7 +16,7 @@ def print_header():
 ════════════════════════════════════════════════════════════════════════════════
                              BlackCode - UBUNTU SERVER BAKIM VE KURULUM BETİĞİ
 ════════════════════════════════════════════════════════════════════════════════
-    Versiyon: 1.4
+    Versiyon: 1.5 (Netdata Docker Entegrasyonu)
     Tarih: 3 Eylül 2025
     Ubuntu Version: 22.04 LTS
 
@@ -30,7 +30,7 @@ def print_header():
     - Docker kurulumu ve güncellemesi
     - Docker Compose kurulumu ve güncellemesi
     - Portainer kurulumu ve güncellemesi
-    - Netdata kurulumu, güncellemesi ve port ayarları
+    - Netdata kurulumu (Docker ile), güncellemesi ve port ayarları
     - Boot analizi
     - Donanım testleri
     - Ağ testleri
@@ -51,22 +51,16 @@ def print_header():
 def print_title(title):
     print(f"\033[94m\n=== {title} ===\033[0m")
 
-# DÜZELTME: Etkileşimli istemleri önlemek için 'non_interactive' parametresi eklendi
 def run(cmd, show_output=True, non_interactive=False):
     try:
         env = os.environ.copy()
         if non_interactive:
             env["DEBIAN_FRONTEND"] = "noninteractive"
-            # Yapılandırma dosyası çakışmalarını ve servis yeniden başlatma sorularını otomatik olarak ele al
             cmd = f'apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" {cmd}'
 
         result = subprocess.run(
-            cmd,
-            shell=True,
-            text=True,
-            capture_output=not show_output,
-            timeout=600, # Zaman aşımını artırdık, upgrade işlemleri uzun sürebilir
-            env=env
+            cmd, shell=True, text=True, capture_output=not show_output,
+            timeout=600, env=env
         )
         return result
     except subprocess.TimeoutExpired:
@@ -82,7 +76,6 @@ def check_service(service):
 
 def update_system():
     print_title("Sistem güncelleme kontrolü başlatıldı")
-    # DÜZELTME: `apt-get` kullanıldı ve `non_interactive=True` ile tam otomasyon sağlandı
     result = run("update -y", show_output=True, non_interactive=True)
     if result.returncode != 0:
         print_title("Güncelleme hatası, listeler temizlenip yeniden deneniyor")
@@ -97,6 +90,8 @@ def update_system():
         print_title("Sistem güncellemesi tamamlandı ve kuruldu")
     else:
         print_title("Sistem zaten güncel")
+
+# ... (Diğer fonksiyonlar: set_locale_tr, install_zram, create_swap, etc. aynı kalıyor) ...
 
 def set_locale_tr():
     print_title("Sistem dili kontrol ediliyor")
@@ -143,7 +138,7 @@ def create_swap(size_gb=2):
         print_title("Mevcut swap alanı kaldırıldı")
 
     print_title(f"{size_gb}GB swap alanı oluşturuluyor...")
-    result = run(f"fallocate -l {size_gb}G {swap_file}", show_output=True) # `dd`'den daha hızlı
+    result = run(f"fallocate -l {size_gb}G {swap_file}", show_output=True)
     if result.returncode != 0:
         print_title("fallocate başarısız oldu, dd ile deneniyor.")
         run(f"dd if=/dev/zero of={swap_file} bs=1M count={size_gb * 1024} status=progress", show_output=True)
@@ -183,7 +178,7 @@ def security_ufw():
         print_title("UFW aktif değil, yapılandırılıyor")
         run("ufw allow OpenSSH", show_output=True)
         run("ufw allow 22/tcp", show_output=True)
-        run("ufw --force enable", show_output=True) # `echo 'y' |` yerine daha güvenilir
+        run("ufw --force enable", show_output=True)
         print_title("UFW aktif edildi")
     else:
         print_title("UFW zaten aktif")
@@ -192,14 +187,12 @@ def install_docker():
     print_title("Docker kurulumu kontrolü")
     if check_service("docker"):
         print_title("Docker zaten kurulu ve çalışıyor. Güncellemeler kontrol ediliyor.")
-        # Sadece Docker paketini güncellemeyi dene
         run("install --only-upgrade -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin", show_output=True, non_interactive=True)
         return
 
     print_title("Docker kuruluyor...")
     run("install -y ca-certificates curl gnupg lsb-release", show_output=True, non_interactive=True)
     
-    # GPG anahtarı ve repository ekleme
     os.makedirs("/etc/apt/keyrings", exist_ok=True)
     run("curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg", show_output=True)
     run('echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list', show_output=True)
@@ -210,7 +203,6 @@ def install_docker():
     run("systemctl enable docker", show_output=True)
     run("systemctl start docker", show_output=True)
     
-    # İYİLEŞTİRME: Kullanıcıya bilgilendirme
     current_user = os.environ.get("SUDO_USER", os.getlogin())
     if current_user != "root":
         run(f"usermod -aG docker {current_user}", show_output=False)
@@ -253,22 +245,61 @@ def install_portainer():
     else:
         print_title("Portainer kurulumunda hata oluştu")
 
-def install_netdata():
-    print_title("Netdata kontrolü")
-    if run("which netdata", show_output=False).returncode == 0:
-        print_title("Netdata zaten kurulu - güncelleme deneniyor")
-        run("/usr/libexec/netdata/netdata-updater.sh --not-running-from-cron", show_output=True)
-    else:
-        print_title("Netdata kuruluyor (Bu işlem biraz zaman alabilir)")
-        run("install -y curl git", show_output=True, non_interactive=True)
-        # Netdata kurulumu için kickstart.sh kullan
-        run("bash <(curl -Ss https://my-netdata.io/kickstart.sh) --non-interactive", show_output=True)
+# YENİ FONKSİYON: Netdata'yı Docker ile kurar
+def install_netdata_docker():
+    print_title("Netdata (Docker) kontrolü")
+
+    # Docker'ın çalışıp çalışmadığını kontrol et
+    if not check_service("docker"):
+        print("\033[1;31mHATA: Netdata'yı Docker ile kurmak için önce Docker'ın kurulu ve çalışır olması gerekir.\033[0m")
+        print("Lütfen menüden Docker kurulumunu seçin.")
+        return
+
+    netdata_command = """
+    docker run -d --name=netdata \\
+    --pid=host \\
+    --network=host \\
+    -v netdataconfig:/etc/netdata \\
+    -v netdatalib:/var/lib/netdata \\
+    -v netdatacache:/var/cache/netdata \\
+    -v /:/host/root:ro,rslave \\
+    -v /etc/passwd:/host/etc/passwd:ro \\
+    -v /etc/group:/host/etc/group:ro \\
+    -v /etc/localtime:/etc/localtime:ro \\
+    -v /proc:/host/proc:ro \\
+    -v /sys:/host/sys:ro \\
+    -v /etc/os-release:/host/etc/os-release:ro \\
+    -v /var/log:/host/var/log:ro \\
+    -v /var/run/docker.sock:/var/run/docker.sock:ro \\
+    -v /run/dbus:/run/dbus:ro \\
+    --restart unless-stopped \\
+    --cap-add SYS_PTRACE \\
+    --cap-add SYS_ADMIN \\
+    --security-opt apparmor=unconfined \\
+    netdata/netdata
+    """
     
-    if check_service("netdata"):
-        run("ufw allow 19999/tcp", show_output=False)
-        print_title("Netdata başarıyla kuruldu/güncellendi")
+    # Mevcut Netdata konteynerini kontrol et
+    if run("docker ps -a --format '{{.Names}}' | grep '^netdata$'", show_output=False).returncode == 0:
+        print_title("Netdata zaten mevcut - en son versiyona güncelleniyor")
+        run("docker stop netdata", show_output=True)
+        run("docker rm netdata", show_output=True)
+        run("docker pull netdata/netdata", show_output=True)
     else:
-        print_title("Netdata kurulumunda hata oluştu")
+        print_title("Netdata (Docker) kuruluyor")
+
+    # Netdata konteynerini çalıştır
+    run(netdata_command, show_output=True)
+    time.sleep(5)
+
+    # Kurulumun başarılı olup olmadığını kontrol et
+    if "netdata" in run("docker ps --format '{{.Names}}'", show_output=False).stdout:
+        print_title("Netdata (Docker) başarıyla kuruldu/güncellendi")
+        # UFW'da portu aç
+        print_title("Güvenlik duvarında 19999 portu açılıyor...")
+        run("ufw allow 19999/tcp", show_output=True)
+    else:
+        print_title("Netdata (Docker) kurulumunda hata oluştu")
 
 def boot_analysis():
     print_title("Boot süresi analizi")
@@ -293,7 +324,6 @@ def network_test():
     print("\nİnternet bağlantısı testi (ping 8.8.8.8):")
     run("ping -c 3 8.8.8.8", show_output=True)
 
-    # İYİLEŞTİRME: IP adreslerini global değişkende sakla
     print("\nIP adresleri alınıyor...")
     try:
         public_ip_res = run("curl -s --connect-timeout 5 http://ipinfo.io/ip", show_output=False)
@@ -311,12 +341,11 @@ def network_test():
 def generate_summary():
     print_title("SİSTEM ÖZET RAPORU")
 
-    # IP adreslerini al (eğer ağ testi yapılmadıysa)
     if not script_state.get("local_ip"):
         network_test() 
 
     local_ip = script_state.get("local_ip", "ALINAMADI")
-    public_ip = script_state.get("public_ip", local_ip) # Genel IP alınamazsa yerel IP kullan
+    public_ip = script_state.get("public_ip", local_ip)
 
     print("\n\033[1;32m● SUNUCU BİLGİLERİ:\033[0m")
     run("hostnamectl", show_output=True)
@@ -338,20 +367,25 @@ def generate_summary():
     else:
         print("Docker kurulu değil.")
     
-    print("\n\033[1;32m● SERVİS DURUMLARI:\033[0m")
-    services = {"docker": "Docker", "ufw": "Güvenlik Duvarı (UFW)", "netdata": "Netdata"}
+    print("\n\033[1;32m● SERVİS & KONTEYNER DURUMLARI:\033[0m")
+    services = {"docker": "Docker Servisi", "ufw": "Güvenlik Duvarı (UFW)"}
     for s_id, s_name in services.items():
         if check_service(s_id):
             print(f"{s_name}: \033[1;32mÇALIŞIYOR\033[0m")
         else:
-            print(f"{s_name}: \033[1;31mDURDURULMUŞ/KURULU DEĞİL\033[0m")
+            print(f"{s_name}: \033[1;31mDURDURULMUŞ\033[0m")
+
+    # GÜNCELLEME: Netdata'yı sistem servisi yerine Docker konteyneri olarak kontrol et
+    if "netdata" in run("docker ps --format '{{.Names}}'", show_output=False).stdout:
+        print(f"Netdata Konteyneri: \033[1;32mÇALIŞIYOR\033[0m")
+    else:
+        print(f"Netdata Konteyneri: \033[1;31mDURDURULMUŞ/KURULU DEĞİL\033[0m")
             
     if "zram" in run("swapon --show", show_output=False).stdout:
         print("ZRAM Swap: \033[1;32mAKTİF\033[0m")
     else:
         print("ZRAM Swap: \033[1;31mPASİF\033[0m")
 
-    # İYİLEŞTİRME: Dinamik IP adresleri ile çıktı ver
     print("\n\033[1;32m● PORT VE ERİŞİM BİLGİLERİ:\033[0m")
     print(f"Netdata: \033[1;36mhttp://{public_ip}:19999\033[0m")
     print(f"Portainer: \033[1;36mhttp://{public_ip}:9000\033[0m")
@@ -377,7 +411,8 @@ def main():
         ("Docker kurulumu", install_docker),
         ("Docker Compose kurulumu", install_docker_compose),
         ("Portainer kurulumu", install_portainer),
-        ("Netdata kurulumu", install_netdata),
+        # GÜNCELLEME: Menüdeki fonksiyon ve açıklama değiştirildi
+        ("Netdata kurulumu (Docker ile)", install_netdata_docker),
         ("Boot analizi", boot_analysis),
         ("Donanım testleri", hardware_test),
         ("Ağ testleri", network_test)
